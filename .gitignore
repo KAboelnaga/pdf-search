@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Secrets and local config
+.env
+
+# Runtime data (uploaded PDFs, local test data, etc.)
+data/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
