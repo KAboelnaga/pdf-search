@@ -57,6 +57,6 @@ def search(body: SearchRequest, request: Request) -> dict:
     if not query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
     if len(query) > settings.max_query_chars:
-        raise HTTPException(status_code=400, detail=f"Query exceeds maximum length of {settings.max_query_chars} characters")
+        raise HTTPException(status_code=400, detail=f"Query exceeds maximum length of {settings.max_query_chars} characters.")
     vector = request.app.state.embedder.embed_query(query)
     return {"results": request.app.state.store.search(vector, settings.top_k)}

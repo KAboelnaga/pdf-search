@@ -9,3 +9,4 @@ class Embedder:
     
     def embed_query(self, text: str) -> list[float]:
         return next(iter(self.model.query_embed(text))).tolist()
+    
