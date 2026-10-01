@@ -10,6 +10,9 @@ class Settings:
     vector_size: int = int(os.getenv("VECTOR_SIZE", 384))
     top_k: int = int(os.getenv("TOP_K", 5))
     max_query_chars: int = int(os.getenv("MAX_QUERY_CHARS", 1000))
+    chunk_size: int = int(os.getenv("CHUNK_SIZE", 800))
+    chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", 120))
+    min_chunk_chars: int = int(os.getenv("MIN_CHUNK_SIZE", 50))
 
 
 settings = Settings()

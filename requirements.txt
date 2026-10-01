@@ -3,3 +3,4 @@ uvicorn[standard]==0.54.0
 python-multipart==0.0.32
 qdrant-client==1.19.1
 fastembed==0.8.1
+pypdf==6.19.0
