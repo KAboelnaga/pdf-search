@@ -14,7 +14,9 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
 from app.chunker import chunk_text
-from app.pdf import extract_pages
+
+from pathlib import Path
+from app.pdf import InvalidDocument, extract_document
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("app")
@@ -51,10 +53,17 @@ async def validation_error(request: Request, exc: RequestValidationError) -> JSO
 
 @app.exception_handler(Exception)
 async def unhandled_error(request: Request, exc: Exception) -> JSONResponse:
-    logger.error("Unhandled error on %s", request.url.path)
+    logger.exception("Unhandled error on %s", request.url.path)
     return JSONResponse(
         status_code=500,
         content={"error": "Internal server error."}
+    )
+
+@app.exception_handler(InvalidDocument)
+async def invalid_document(request: Request, exc: InvalidDocument) -> JSONResponse:
+    return JSONResponse(
+        status_code=400,
+        content={"error": str(exc)},
     )
 
 class SearchRequest(BaseModel):
@@ -75,17 +84,37 @@ def search(body: SearchRequest, request: Request) -> dict:
     vector = request.app.state.embedder.embed_query(query)
     return {"results": request.app.state.store.search(vector, settings.top_k)}
 
-def ingest_pdf(filename: str, data: bytes, embedder: Embedder, store: VectorStore) -> int:
+def build_chunks(filename: str, data: bytes) -> tuple[list[str], list[dict]]:
     chunks, payloads = [], []
-    for page_number, page_text in extract_pages(data):
-        for chunk in chunk_text(page_text, settings.chunk_size, settings.chunk_overlap):
+    for page_number, text in extract_document(filename, data):
+        for chunk in chunk_text(text, settings.chunk_size, settings.chunk_overlap):
             chunks.append(chunk)
-            payloads.append({"document": filename, "content": chunk, "page_number": page_number})
+            payloads.append({"document": filename, "page": page_number, "content": chunk})
     if not chunks:
-        raise HTTPException(status_code=400, detail=f"No extractable text in {filename}.")
-    vectors = embedder.embed_passages(chunks)
-    store.upsert(vectors, payloads)
-    return len(chunks)
+        raise InvalidDocument(f"No extractable text in {filename}")
+    return chunks, payloads
+
+def ingest_documents(docs: list[tuple[str, bytes]], embedder: Embedder, store: VectorStore) -> int:
+    all_chunks, all_payloads = [], []
+    for filename, data in docs:
+        chunks, payloads = build_chunks(filename, data)
+        all_chunks.extend(chunks)
+        all_payloads.extend(payloads)
+    vectors = embedder.embed_passages(all_chunks)
+    store.upsert(vectors, all_payloads)
+    return len(all_chunks)
+
+def collect_directory(raw: str) -> list[tuple[str, bytes]]:
+    root = Path(settings.data_dir).resolve()
+    path = (root / raw.strip()).resolve()
+    if not path.is_relative_to(root):
+        raise InvalidDocument(f"Directory must be inside {root}.")
+    if not path.is_dir():
+        raise InvalidDocument(f"Directory not found: {raw}.")
+    pdfs = sorted(p for p in path.iterdir() if p.is_file() and p.suffix.lower() == ".pdf")
+    if not pdfs:
+        raise InvalidDocument(f"No PDF files found in {raw}.")
+    return [(p.name, p.read_bytes()) for p in pdfs]
 
 @app.post("/ingest/")
 async def ingest(request: Request) -> dict:
@@ -93,12 +122,15 @@ async def ingest(request: Request) -> dict:
     items = form.getlist("input")
     if not items:
         raise HTTPException(status_code=400, detail="Field 'input' is required.")
-    item = items[0]
-    if not isinstance(item, UploadFile):
-        raise HTTPException(status_code=400, detail="Directory input is not supported yet.")
-    filename = item.filename or ""
-    if not filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
-    data = await item.read()
-    await run_in_threadpool(ingest_pdf, filename, data, request.app.state.embedder, request.app.state.store)
-    return {"message": "Successfully ingested 1 PDF documents.", "files": [filename]}
+    docs: list[tuple[str, bytes]] = []
+    for item in items:
+        if isinstance(item, UploadFile):
+            filename = item.filename or ""
+            if not filename.lower().endswith(".pdf"):
+                raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
+            docs.append((filename, await item.read()))
+        else:
+            docs.extend(await run_in_threadpool(collect_directory, item))
+    await run_in_threadpool(ingest_documents, docs, request.app.state.embedder, request.app.state.store)
+    names = [name for name, _ in docs]
+    return {"message": f"Successfully ingested {len(names)} PDF documents.", "files": names}
