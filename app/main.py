@@ -12,6 +12,7 @@ from app.store import VectorStore
 
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.chunker import chunk_text
 
@@ -62,8 +63,8 @@ async def payload_too_large(request: Request, exc: PayloadTooLarge) -> JSONRespo
         content={"error": str(exc)},
     )
 
-@app.exception_handler(HTTPException)
-async def http_error(request: Request, exc: HTTPException) -> JSONResponse:
+@app.exception_handler(StarletteHTTPException)
+async def http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
         content={"error": exc.detail},
@@ -110,12 +111,14 @@ def search(body: SearchRequest, request: Request) -> dict:
     return {"results": request.app.state.store.search(vector, settings.top_k)}
 
 def build_chunks(filename: str, data: bytes) -> tuple[list[str], list[str], list[dict]]:
-    file_hash = hashlib.sha256(data).hexdigest()
+    pages = extract_document(filename, data)
+    content = "\n".join(f"{n}:{''.join(t.split())}" for n, t in pages) 
+    text_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
     ids, chunks, payloads = [], [], []
-    for page_number, text in extract_document(filename, data):
+    for page_number, text in pages:
         for chunk in chunk_text(text, settings.chunk_size, settings.chunk_overlap):
             index = len(chunks)
-            point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{file_hash}:{index}"))
+            point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{text_hash}:{index}"))
             ids.append(point_id)
             chunks.append(chunk)
             payloads.append({"document": filename, "page": page_number, "content": chunk})

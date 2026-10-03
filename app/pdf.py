@@ -37,6 +37,8 @@ def extract_pages(filename: str, data: bytes) -> list[tuple[int, str]]:
 
 
 def extract_document(filename: str, data: bytes) -> list[tuple[int, str]]:
+    if not data.strip():
+        raise InvalidDocument(f"{filename} is empty.")
     if data.startswith(b"%PDF-"):
         return extract_pages(filename, data)
     try:
