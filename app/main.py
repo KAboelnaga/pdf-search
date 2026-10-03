@@ -18,6 +18,9 @@ from app.chunker import chunk_text
 from pathlib import Path
 from app.pdf import InvalidDocument, extract_document
 
+import hashlib
+import uuid
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("app")
 
@@ -84,29 +87,35 @@ def search(body: SearchRequest, request: Request) -> dict:
     vector = request.app.state.embedder.embed_query(query)
     return {"results": request.app.state.store.search(vector, settings.top_k)}
 
-def build_chunks(filename: str, data: bytes) -> tuple[list[str], list[dict]]:
-    chunks, payloads = [], []
+def build_chunks(filename: str, data: bytes) -> tuple[list[str], list[str], list[dict]]:
+    file_hash = hashlib.sha256(data).hexdigest()
+    ids, chunks, payloads = [], [], []
     for page_number, text in extract_document(filename, data):
         for chunk in chunk_text(text, settings.chunk_size, settings.chunk_overlap):
+            index = len(chunks)
+            point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{file_hash}:{index}"))
+            ids.append(point_id)
             chunks.append(chunk)
             payloads.append({"document": filename, "page": page_number, "content": chunk})
     if not chunks:
         raise InvalidDocument(f"No extractable text in {filename}")
-    return chunks, payloads
+    return ids, chunks, payloads
 
 def ingest_documents(docs: list[tuple[str, bytes]], embedder: Embedder, store: VectorStore) -> int:
-    all_chunks, all_payloads = [], []
+    all_chunks, all_payloads, all_ids = [], [], []
     for filename, data in docs:
-        chunks, payloads = build_chunks(filename, data)
+        ids, chunks, payloads = build_chunks(filename, data)
         all_chunks.extend(chunks)
         all_payloads.extend(payloads)
+        all_ids.extend(ids)
     size = settings.embed_batch_size
     for start in range(0, len(all_chunks), size):
         end = start + size
         batch_chunks = all_chunks[start:end]
         batch_payloads = all_payloads[start:end]
+        batch_ids = all_ids[start:end]
         vectors = embedder.embed_passages(batch_chunks)
-        store.upsert(vectors, batch_payloads)
+        store.upsert(batch_ids, vectors, batch_payloads)
     return len(all_chunks)
 
 def collect_directory(raw: str) -> list[tuple[str, bytes]]:
