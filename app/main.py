@@ -24,6 +24,20 @@ import uuid
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("app")
 
+def check_limits(files: list[tuple[str, int]]) -> None:
+    mb = 1024 * 1024
+    if len(files) > settings.max_files:
+        raise PayloadTooLarge(f"Too many files: {len(files)} exceeds limit of {settings.max_files}.")
+    for filename, size in files:
+        if size > settings.max_file_mb * mb:
+            raise PayloadTooLarge(f"{filename} is too large: {size / mb:.2f} MB exceeds limit of {settings.max_file_mb} MB.")
+    total_size = sum(size for _, size in files)
+    if total_size > settings.max_total_mb * mb:
+        raise PayloadTooLarge(f"Total size of files exceeds limit of {settings.max_total_mb} MB.")
+
+class PayloadTooLarge(Exception):
+    """Request is valid but over a size limit -> 413"""
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("loading embedding model %s", settings.model_name)
@@ -38,6 +52,14 @@ app = FastAPI(
     version="1.0.0", 
     description="API for ingesting PDF files and performing semantic search on their content.",
     lifespan=lifespan
+    )
+
+
+@app.exception_handler(PayloadTooLarge)
+async def payload_too_large(request: Request, exc: PayloadTooLarge) -> JSONResponse:
+    return JSONResponse(
+        status_code=413,
+        content={"error": str(exc)},
     )
 
 @app.exception_handler(HTTPException)
@@ -108,6 +130,8 @@ def ingest_documents(docs: list[tuple[str, bytes]], embedder: Embedder, store: V
         all_chunks.extend(chunks)
         all_payloads.extend(payloads)
         all_ids.extend(ids)
+    if len(all_chunks) > settings.max_chunks:
+        raise PayloadTooLarge(f"Total number of chunks {len(all_chunks)} exceeds limit of {settings.max_chunks}.")
     size = settings.embed_batch_size
     for start in range(0, len(all_chunks), size):
         end = start + size
@@ -136,10 +160,11 @@ def collect_directory(raw: str) -> list[tuple[str, bytes]]:
             continue
         if not real.is_file():
             continue
-        docs.append((p.name, real.read_bytes()))
+        docs.append((p.name, real))
     if not docs:
         raise InvalidDocument(f"No PDF files found in {raw}.")
-    return docs
+    check_limits([(name, real.stat().st_size) for name, real in docs])
+    return [(name, real.read_bytes()) for name, real in docs]
 
 @app.post("/ingest/")
 async def ingest(request: Request) -> dict:
@@ -147,6 +172,8 @@ async def ingest(request: Request) -> dict:
     items = form.getlist("input")
     if not items:
         raise HTTPException(status_code=400, detail="Field 'input' is required.")
+    uploads = [item for item in items if isinstance(item, UploadFile)]
+    check_limits([(u.filename or "", u.size or 0) for u in uploads])
     docs: list[tuple[str, bytes]] = []
     for item in items:
         if isinstance(item, UploadFile):

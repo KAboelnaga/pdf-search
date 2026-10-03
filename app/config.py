@@ -14,7 +14,10 @@ class Settings:
     chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", 120))
     data_dir: str = os.getenv("DATA_DIR", "/data")
     embed_batch_size: int = int(os.getenv("EMBED_BATCH_SIZE", 64))
-
+    max_files: int = int(os.getenv("MAX_FILES", 20))
+    max_total_mb: int = int(os.getenv("MAX_TOTAL_MB", 100))
+    max_file_mb: int = int(os.getenv("MAX_FILE_MB", 50))
+    max_chunks: int = int(os.getenv("MAX_CHUNKS", 1500))
     def __post_init__(self):
         if self.chunk_size <= 0:
             raise ValueError(f"CHUNK_SIZE ({self.chunk_size}) must be a positive integer.")
@@ -30,6 +33,13 @@ class Settings:
             raise ValueError(f"MAX_QUERY_CHARS ({self.max_query_chars}) must be a positive integer.")
         if self.embed_batch_size <= 0:
             raise ValueError(f"EMBED_BATCH_SIZE ({self.embed_batch_size}) must be a positive integer.")
-
+        if self.max_files <= 0:
+            raise ValueError(f"MAX_FILES ({self.max_files}) must be a positive integer.")
+        if self.max_total_mb <= 0:
+            raise ValueError(f"MAX_TOTAL_MB ({self.max_total_mb}) must be a positive integer.")
+        if self.max_file_mb <= 0:
+            raise ValueError(f"MAX_FILE_MB ({self.max_file_mb}) must be a positive integer.")
+        if self.max_chunks <= 0:
+            raise ValueError(f"MAX_CHUNKS ({self.max_chunks}) must be a positive integer.")
 
 settings = Settings()
