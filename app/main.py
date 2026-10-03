@@ -24,10 +24,13 @@ import uuid
 
 import asyncio
 
+import time
+
 ingest_slots = asyncio.Semaphore(settings.max_concurrent_ingests)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("app")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 def check_limits(files: list[tuple[str, int]]) -> None:
     mb = 1024 * 1024
@@ -59,9 +62,21 @@ app = FastAPI(
     lifespan=lifespan
     )
 
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.info("%s %s 500 %.2fs", request.method, request.url.path, time.perf_counter() - start)
+        raise
+    logger.info("%s %s %d %.2fs", request.method, request.url.path,
+                response.status_code, time.perf_counter() - start)
+    return response
 
 @app.exception_handler(PayloadTooLarge)
 async def payload_too_large(request: Request, exc: PayloadTooLarge) -> JSONResponse:
+    logger.warning("%s %s rejected: %s", request.method, request.url.path, exc)
     return JSONResponse(
         status_code=413,
         content={"error": str(exc)},
@@ -69,6 +84,7 @@ async def payload_too_large(request: Request, exc: PayloadTooLarge) -> JSONRespo
 
 @app.exception_handler(StarletteHTTPException)
 async def http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    logger.warning("%s %s rejected: %s", request.method, request.url.path, exc.detail)
     return JSONResponse(
         status_code=exc.status_code,
         content={"error": exc.detail},
@@ -91,6 +107,7 @@ async def unhandled_error(request: Request, exc: Exception) -> JSONResponse:
 
 @app.exception_handler(InvalidDocument)
 async def invalid_document(request: Request, exc: InvalidDocument) -> JSONResponse:
+    logger.warning("%s %s rejected: %s", request.method, request.url.path, exc)
     return JSONResponse(
         status_code=400,
         content={"error": str(exc)},
@@ -131,6 +148,7 @@ def build_chunks(filename: str, data: bytes) -> tuple[list[str], list[str], list
     return ids, chunks, payloads
 
 def ingest_documents(docs: list[tuple[str, bytes]], embedder: Embedder, store: VectorStore) -> int:
+    t0 = time.perf_counter()
     all_chunks, all_payloads, all_ids = [], [], []
     for filename, data in docs:
         ids, chunks, payloads = build_chunks(filename, data)
@@ -139,14 +157,23 @@ def ingest_documents(docs: list[tuple[str, bytes]], embedder: Embedder, store: V
         all_ids.extend(ids)
     if len(all_chunks) > settings.max_chunks:
         raise PayloadTooLarge(f"Total number of chunks {len(all_chunks)} exceeds limit of {settings.max_chunks}.")
+    parse_s = time.perf_counter() - t0
+    embed_s = store_s = 0.0
     size = settings.embed_batch_size
     for start in range(0, len(all_chunks), size):
         end = start + size
         batch_chunks = all_chunks[start:end]
         batch_payloads = all_payloads[start:end]
         batch_ids = all_ids[start:end]
+        t = time.perf_counter()
         vectors = embedder.embed_passages(batch_chunks)
+        embed_s += time.perf_counter() - t
+        t = time.perf_counter()
         store.upsert(batch_ids, vectors, batch_payloads)
+        store_s += time.perf_counter() - t
+    pages = len({(p["document"], p["page"]) for p in all_payloads})
+    logger.info("ingest: %d files, %d pages, %d chunks | parse %.2fs, embed %.2fs, store %.2fs",
+                len(docs), pages, len(all_chunks), parse_s, embed_s, store_s)
     return len(all_chunks)
 
 def collect_directory(raw: str) -> list[tuple[str, bytes]]:

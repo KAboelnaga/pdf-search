@@ -12,4 +12,4 @@ RUN python -c "from fastembed import TextEmbedding; TextEmbedding('BAAI/bge-smal
 COPY app ./app
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "--no-access-log","app.main:app", "--host", "0.0.0.0", "--port", "8000"]
