@@ -100,8 +100,13 @@ def ingest_documents(docs: list[tuple[str, bytes]], embedder: Embedder, store: V
         chunks, payloads = build_chunks(filename, data)
         all_chunks.extend(chunks)
         all_payloads.extend(payloads)
-    vectors = embedder.embed_passages(all_chunks)
-    store.upsert(vectors, all_payloads)
+    size = settings.embed_batch_size
+    for start in range(0, len(all_chunks), size):
+        end = start + size
+        batch_chunks = all_chunks[start:end]
+        batch_payloads = all_payloads[start:end]
+        vectors = embedder.embed_passages(batch_chunks)
+        store.upsert(vectors, batch_payloads)
     return len(all_chunks)
 
 def collect_directory(raw: str) -> list[tuple[str, bytes]]:

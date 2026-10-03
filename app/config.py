@@ -13,6 +13,7 @@ class Settings:
     chunk_size: int = int(os.getenv("CHUNK_SIZE", 800))
     chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", 120))
     data_dir: str = os.getenv("DATA_DIR", "/data")
+    embed_batch_size: int = int(os.getenv("EMBED_BATCH_SIZE", 64))
 
     def __post_init__(self):
         if self.chunk_size <= 0:
@@ -27,6 +28,8 @@ class Settings:
             raise ValueError(f"VECTOR_SIZE ({self.vector_size}) must be a positive integer.")
         if self.max_query_chars <= 0:
             raise ValueError(f"MAX_QUERY_CHARS ({self.max_query_chars}) must be a positive integer.")
+        if self.embed_batch_size <= 0:
+            raise ValueError(f"EMBED_BATCH_SIZE ({self.embed_batch_size}) must be a positive integer.")
 
 
 settings = Settings()
