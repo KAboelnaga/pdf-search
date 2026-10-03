@@ -14,5 +14,19 @@ class Settings:
     chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", 120))
     data_dir: str = os.getenv("DATA_DIR", "/data")
 
+    def __post_init__(self):
+        if self.chunk_size <= 0:
+            raise ValueError(f"CHUNK_SIZE ({self.chunk_size}) must be a positive integer.")
+        if self.chunk_overlap < 0:
+            raise ValueError(f"CHUNK_OVERLAP ({self.chunk_overlap}) must be a non-negative integer.")
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError(f"CHUNK_OVERLAP ({self.chunk_overlap}) must be less than CHUNK_SIZE ({self.chunk_size}).")
+        if self.top_k <= 0:
+            raise ValueError(f"TOP_K ({self.top_k}) must be a positive integer.")
+        if self.vector_size <= 0:
+            raise ValueError(f"VECTOR_SIZE ({self.vector_size}) must be a positive integer.")
+        if self.max_query_chars <= 0:
+            raise ValueError(f"MAX_QUERY_CHARS ({self.max_query_chars}) must be a positive integer.")
+
 
 settings = Settings()
