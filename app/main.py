@@ -98,7 +98,7 @@ def build_chunks(filename: str, data: bytes) -> tuple[list[str], list[str], list
             chunks.append(chunk)
             payloads.append({"document": filename, "page": page_number, "content": chunk})
     if not chunks:
-        raise InvalidDocument(f"No extractable text in {filename}")
+        raise InvalidDocument(f"No extractable text in {filename} (scanned PDF? OCR is not supported).")
     return ids, chunks, payloads
 
 def ingest_documents(docs: list[tuple[str, bytes]], embedder: Embedder, store: VectorStore) -> int:
