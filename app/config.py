@@ -18,6 +18,9 @@ class Settings:
     max_total_mb: int = int(os.getenv("MAX_TOTAL_MB", 100))
     max_file_mb: int = int(os.getenv("MAX_FILE_MB", 50))
     max_chunks: int = int(os.getenv("MAX_CHUNKS", 1500))
+    max_concurrent_ingests: int = int(os.getenv("MAX_CONCURRENT_INGESTS", 2))
+    ingest_wait_seconds: int = int(os.getenv("INGEST_WAIT_SECONDS", 120))
+
     def __post_init__(self):
         if self.chunk_size <= 0:
             raise ValueError(f"CHUNK_SIZE ({self.chunk_size}) must be a positive integer.")
@@ -41,5 +44,9 @@ class Settings:
             raise ValueError(f"MAX_FILE_MB ({self.max_file_mb}) must be a positive integer.")
         if self.max_chunks <= 0:
             raise ValueError(f"MAX_CHUNKS ({self.max_chunks}) must be a positive integer.")
+        if self.max_concurrent_ingests <= 0:
+            raise ValueError(f"MAX_CONCURRENT_INGESTS ({self.max_concurrent_ingests}) must be a positive integer.")
+        if self.ingest_wait_seconds <= 0:
+            raise ValueError(f"INGEST_WAIT_SECONDS ({self.ingest_wait_seconds}) must be a positive integer.")
 
 settings = Settings()

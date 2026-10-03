@@ -22,6 +22,10 @@ from app.pdf import InvalidDocument, extract_document
 import hashlib
 import uuid
 
+import asyncio
+
+ingest_slots = asyncio.Semaphore(settings.max_concurrent_ingests)
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("app")
 
@@ -177,15 +181,24 @@ async def ingest(request: Request) -> dict:
         raise HTTPException(status_code=400, detail="Field 'input' is required.")
     uploads = [item for item in items if isinstance(item, UploadFile)]
     check_limits([(u.filename or "", u.size or 0) for u in uploads])
-    docs: list[tuple[str, bytes]] = []
-    for item in items:
-        if isinstance(item, UploadFile):
-            filename = item.filename or ""
-            if not filename.lower().endswith(".pdf"):
-                raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
-            docs.append((filename, await item.read()))
-        else:
-            docs.extend(await run_in_threadpool(collect_directory, item))
-    await run_in_threadpool(ingest_documents, docs, request.app.state.embedder, request.app.state.store)
+    for u in uploads:
+        if not (u.filename or "").lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
+    try:
+        await asyncio.wait_for(ingest_slots.acquire(), timeout=settings.ingest_wait_seconds)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=503, detail="Server is busy ingesting other files. Try again shortly.")
+    try:
+        docs: list[tuple[str, bytes]] = []
+        for item in items:
+            if isinstance(item, UploadFile):
+                filename = item.filename or ""
+                docs.append((filename, await item.read()))
+            else:
+                docs.extend(await run_in_threadpool(collect_directory, item))
+        await run_in_threadpool(ingest_documents, docs, request.app.state.embedder, request.app.state.store)
+    finally:
+        ingest_slots.release()                # ALWAYS give the slot back
+    
     names = [name for name, _ in docs]
     return {"message": f"Successfully ingested {len(names)} PDF documents.", "files": names}
