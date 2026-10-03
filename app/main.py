@@ -111,10 +111,21 @@ def collect_directory(raw: str) -> list[tuple[str, bytes]]:
         raise InvalidDocument(f"Directory must be inside {root}.")
     if not path.is_dir():
         raise InvalidDocument(f"Directory not found: {raw}.")
-    pdfs = sorted(p for p in path.iterdir() if p.is_file() and p.suffix.lower() == ".pdf")
-    if not pdfs:
+
+    docs = []
+    for p in sorted(path.iterdir()):
+        if p.suffix.lower() != ".pdf":
+            continue
+        real = p.resolve()
+        if not real.is_relative_to(root):
+            logger.warning("Skipping %s: it points outside %s.", p.name, root)
+            continue
+        if not real.is_file():
+            continue
+        docs.append((p.name, real.read_bytes()))
+    if not docs:
         raise InvalidDocument(f"No PDF files found in {raw}.")
-    return [(p.name, p.read_bytes()) for p in pdfs]
+    return docs
 
 @app.post("/ingest/")
 async def ingest(request: Request) -> dict:
