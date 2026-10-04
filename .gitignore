@@ -8,7 +8,11 @@ __pycache__/
 .env
 
 # Runtime data (uploaded PDFs, local test data, etc.)
-data/
+data/*
+!data/sample.pdf
+!data/pdfs/
+data/pdfs/*
+!data/pdfs/vector-databases.pdf
 
 # Editors / OS
 .vscode/
