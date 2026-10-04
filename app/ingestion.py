@@ -34,6 +34,8 @@ def check_limits(files: list[tuple[str, int]]) -> None:
 
 
 def collect_directory(raw: str) -> list[tuple[str, bytes]]:
+    if not raw.strip():
+        raise InvalidDocument("Directory path is empty.")
     root = Path(settings.data_dir).resolve()
     path = (root / raw.strip()).resolve()
     if not path.is_relative_to(root):
