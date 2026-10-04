@@ -34,7 +34,7 @@ class VectorStore:
                 "document": hit.payload["document"],
                 "score": hit.score,
                 "content": hit.payload["content"],
-                "page": hit.payload("page")
+                "page": hit.payload.get("page")
             }
             for hit in hits
         ]
