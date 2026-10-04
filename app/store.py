@@ -11,6 +11,10 @@ class VectorStore:
                 collection_name=collection,
                 vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
             )
+
+    def ping(self) -> None:
+        self.client.get_collections()
+
     def upsert(self, ids: list[str], vector: list[list[float]], payload: list[dict]) -> None:
         points = [
             PointStruct(id=pid, vector=vec, payload=pl) 
@@ -29,7 +33,8 @@ class VectorStore:
             {
                 "document": hit.payload["document"],
                 "score": hit.score,
-                "content": hit.payload["content"]
+                "content": hit.payload["content"],
+                "page": hit.payload("page")
             }
             for hit in hits
         ]

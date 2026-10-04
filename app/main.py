@@ -118,8 +118,13 @@ class SearchRequest(BaseModel):
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "healthy"}
+def health():
+    try:
+        app.state.store.ping()
+    except Exception:
+        logger.warning("health check failed: Qdrant unreachable.")
+        return JSONResponse(status_code=503, content={"status": "unhealthy", "qdrant": "unreachable"})
+    return {"status": "healthy", "qdrant": "ok"}
 
 @app.post("/search/")
 def search(body: SearchRequest, request: Request) -> dict:
@@ -200,7 +205,18 @@ def collect_directory(raw: str) -> list[tuple[str, bytes]]:
     check_limits([(name, real.stat().st_size) for name, real in docs])
     return [(name, real.read_bytes()) for name, real in docs]
 
-@app.post("/ingest/")
+@app.post("/ingest/", openapi_extra={"requestBody": {"required": True, "content": {"multipart/form-data": {"schema": {
+    "type": "object",
+    "required": ["input"],
+    "properties": {"input": {
+        "description": "File(s) or directory path",
+        "oneOf": [
+            {"type": "string", "description": "Directory path (e.g., /data/pdfs)"},
+            {"type": "string", "format": "binary", "description": "Single PDF file"},
+            {"type": "array", "items": {"type": "string", "format": "binary"}, "description": "Multiple PDF files"},
+        ],
+    }},
+}}}}})
 async def ingest(request: Request) -> dict:
     form = await request.form()
     items = form.getlist("input")
