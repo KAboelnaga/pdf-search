@@ -153,4 +153,5 @@ async def ingest(request: Request) -> dict:
         ingest_slots.release()                # ALWAYS give the slot back
     
     names = [name for name, _ in docs]
-    return {"message": f"Successfully ingested {len(names)} PDF documents.", "files": names}
+    noun = "document" if len(names) == 1 else "documents"
+    return {"message": f"Successfully ingested {len(names)} PDF {noun}.", "files": names}

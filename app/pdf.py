@@ -8,6 +8,7 @@ class InvalidDocument(ValueError):
     """A user error about an input file -> mapped to HTTP 400 in main.py."""
 
 def extract_pages(filename: str, data: bytes) -> list[tuple[int, str]]:
+    """(page_number, text) for every page with text. Any pypdf failure is the file's fault -> InvalidDocument."""
     try:
         reader = PdfReader(io.BytesIO(data))
     except Exception as exc:
@@ -37,6 +38,8 @@ def extract_pages(filename: str, data: bytes) -> list[tuple[int, str]]:
 
 
 def extract_document(filename: str, data: bytes) -> list[tuple[int, str]]:
+    """Real PDF (%PDF- header) -> pypdf. UTF-8 text named .pdf -> one page + warning (their suite.py
+    uploads one and expects 200). Anything else -> InvalidDocument."""
     if not data.strip():
         raise InvalidDocument(f"{filename} is empty.")
     if data.startswith(b"%PDF-"):

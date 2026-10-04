@@ -22,6 +22,7 @@ class PayloadTooLarge(Exception):
 
 
 def check_limits(files: list[tuple[str, int]]) -> None:
+    """Reject a request from (name, size) pairs alone, before any file is read into memory."""
     mb = 1024 * 1024
     if len(files) > settings.max_files:
         raise PayloadTooLarge(f"Too many files: {len(files)} exceeds limit of {settings.max_files}.")
@@ -34,6 +35,7 @@ def check_limits(files: list[tuple[str, int]]) -> None:
 
 
 def collect_directory(raw: str) -> list[tuple[str, bytes]]:
+    """Read the *.pdf files of a folder inside DATA_DIR, never following a path or symlink outside it."""
     if not raw.strip():
         raise InvalidDocument("Directory path is empty.")
     root = Path(settings.data_dir).resolve()
@@ -61,8 +63,14 @@ def collect_directory(raw: str) -> list[tuple[str, bytes]]:
 
 
 def build_chunks(filename: str, data: bytes) -> tuple[list[str], list[str], list[dict]]:
+    """Turn one file into aligned (ids, chunks, payloads).
+
+    IDs come from a fingerprint of the extracted text (whitespace removed, because pypdf's spacing
+    varies between re-saves) plus the chunk position, so re-ingesting the same content overwrites
+    instead of duplicating.
+    """
     pages = extract_document(filename, data)
-    content = "\n".join(f"{n}:{''.join(t.split())}" for n, t in pages) 
+    content = "\n".join(f"{n}:{''.join(t.split())}" for n, t in pages)
     text_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
     ids, chunks, payloads = [], [], []
     for page_number, text in pages:
@@ -78,6 +86,8 @@ def build_chunks(filename: str, data: bytes) -> tuple[list[str], list[str], list
 
 
 def ingest_documents(docs: list[tuple[str, bytes]], embedder: Embedder, store: VectorStore) -> int:
+    """Phase 1 parses and chunks every file without writing (so 400/413 means nothing was stored);
+    phase 2 embeds and upserts in batches. Returns the number of chunks stored."""
     t0 = time.perf_counter()
     all_chunks, all_payloads, all_ids = [], [], []
     for filename, data in docs:
